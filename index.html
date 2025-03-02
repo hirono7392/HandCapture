@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ハンドジェスチャー認識システム</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mediapipe/0.6.1/mediapipe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 28px;
+        }
+        .video-container {
+            position: relative;
+            margin-bottom: 20px;
+            background-color: #fff;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        #output_canvas {
+            width: 100%;
+            max-width: 640px;
+            display: block;
+            margin: 0 auto;
+        }
+        .gesture-result {
+            background-color: #f0f0f0;
+            padding: 10px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .start-btn {
+            background-color: #4caf50;
+            color: white;
+        }
+        .stop-btn {
+            background-color: #f44336;
+            color: white;
+        }
+        .download-btn {
+            background-color: #2196f3;
+            color: white;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .status {
+            text-align: center;
+            margin-bottom: 20px;
+            font-style: italic;
+            color: #666;
+        }
+        .landmarks-container {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .landmarks-table {
+            width: 48%;
+            border-collapse: collapse;
+            background-color: #fff;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .landmarks-table th {
+            background-color: #f0f0f0;
+            padding: 8px;
+            text-align: center;
+        }
+        .landmarks-table td {
+            padding: 6px;
+            text-align: center;
+            border-top: 1px solid #eee;
+        }
+        .landmarks-table caption {
+            padding: 10px;
+            font-weight: bold;
+            background-color: #eee;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ハンドジェスチャー認識システム</h1>
+        
+        <div class="video-container">
+            <canvas id="output_canvas"></canvas>
+        </div>
+        
+        <div class="gesture-result">
+            <div>左手: <span id="left_gesture">検出中...</span></div>
+            <div>右手: <span id="right_gesture">検出中...</span></div>
+        </div>
+        
+        <div class="controls">
+            <button id="start_button" class="start-btn">開始</button>
+            <button id="stop_button" class="stop-btn" disabled>停止</button>
+            <button id="download_button" class="download-btn" disabled>CSVダウンロード</button>
+        </div>
+        
+        <div class="status" id="status">ステータス: 準備完了</div>
+        
+        <h2>手のランドマーク座標:</h2>
+        <div class="landmarks-container">
+            <table class="landmarks-table">
+                <caption>左手</caption>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>X</th>
+                        <th>Y</th>
+                        <th>Z</th>
+                    </tr>
+                </thead>
+                <tbody id="left_landmarks">
+                    <!-- ここに左手のランドマークデータが入ります -->
+                </tbody>
+            </table>
+            
+            <table class="landmarks-table">
+                <caption>右手</caption>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>X</th>
+                        <th>Y</th>
+                        <th>Z</th>
+                    </tr>
+                </thead>
+                <tbody id="right_landmarks">
+                    <!-- ここに右手のランドマークデータが入ります -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // グローバル変数
+        let camera;
+        let recordedData = [];
+        let isRecording = false;
+        let recordingCount = 0;
+        const landmarkNames = [
+            "手首", "親指の付け根", "親指第1関節", "親指第2関節", "親指の先",
+            "人差指の付け根", "人差指第1関節", "人差指第2関節", "人差指の先",
+            "中指の付け根", "中指第1関節", "中指第2関節", "中指の先",
+            "薬指の付け根", "薬指第1関節", "薬指第2関節", "薬指の先",
+            "小指の付け根", "小指第1関節", "小指第2関節", "小指の先"
+        ];
+
+        // メインのキャンバス要素とコンテキストを取得
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        canvasElement.width = 640;
+        canvasElement.height = 480;
+
+        // ハンドトラッキングの設定
+        const hands = new Hands({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }
+        });
+
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        // 結果処理関数
+        hands.onResults(processResults);
+
+        // カメラ初期化
+        function initCamera() {
+            if (camera) {
+                camera.stop();
+            }
+            
+            camera = new Camera(canvasElement, {
+                onFrame: async () => {
+                    await hands.send({image: canvasElement});
+                },
+                width: 640,
+                height: 480
+            });
+        }
+
+        // 結果処理関数
+        function processResults(results) {
+            // キャンバスをクリア
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            // カメラ映像を描画
+            canvasCtx.drawImage(
+                results.image, 0, 0, canvasElement.width, canvasElement.height);
+            
+            // 手が検出されている場合
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                // 左右の手情報を初期化
+                let leftHand = null;
+                let rightHand = null;
+                
+                // 各検出された手に対して処理
+                for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                    const landmarks = results.multiHandLandmarks[i];
+                    const handedness = results.multiHandedness[i].label;
+                    
+                    // 手の骨格を描画
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, 
+                        {color: handedness === 'Left' ? 'blue' : 'red', lineWidth: 3});
+                    drawLandmarks(canvasCtx, landmarks, 
+                        {color: handedness === 'Left' ? 'blue' : 'red', lineWidth: 1, radius: 5});
+                    
+                    // 左右の手情報を保存
+                    if (handedness === 'Left') {
+                        leftHand = {landmarks, handedness};
+                    } else {
+                        rightHand = {landmarks, handedness};
+                    }
+                }
+                
+                // 左手のジェスチャー認識と表示
+                if (leftHand) {
+                    const leftGesture = recognizeGesture(leftHand.landmarks);
+                    document.getElementById('left_gesture').textContent = leftGesture;
+                    updateLandmarkTable('left_landmarks', leftHand.landmarks);
+                } else {
+                    document.getElementById('left_gesture').textContent = '未検出';
+                    clearLandmarkTable('left_landmarks');
+                }
+                
+                // 右手のジェスチャー認識と表示
+                if (rightHand) {
+                    const rightGesture = recognizeGesture(rightHand.landmarks);
+                    document.getElementById('right_gesture').textContent = rightGesture;
+                    updateLandmarkTable('right_landmarks', rightHand.landmarks);
+                } else {
+                    document.getElementById('right_gesture').textContent = '未検出';
+                    clearLandmarkTable('right_landmarks');
+                }
+                
+                // 記録中ならデータを保存
+                if (isRecording) {
+                    recordLandmarks(leftHand, rightHand);
+                    document.getElementById('status').textContent = `ステータス: データ記録中... (${recordingCount}件)`;
+                }
+            } else {
+                // 手が検出されなかった場合
+                document.getElementById('left_gesture').textContent = '未検出';
+                document.getElementById('right_gesture').textContent = '未検出';
+                clearLandmarkTable('left_landmarks');
+                clearLandmarkTable('right_landmarks');
+            }
+        }
+
+        // ジェスチャー認識関数
+        function recognizeGesture(landmarks) {
+            // 指の開閉状態を取得 (指先と手首の位置関係で判定)
+            const thumbOpen = landmarks[4].y < landmarks[3].y;
+            const indexOpen = landmarks[8].y < landmarks[5].y;
+            const middleOpen = landmarks[12].y < landmarks[9].y;
+            const ringOpen = landmarks[16].y < landmarks[13].y;
+            const pinkyOpen = landmarks[20].y < landmarks[17].y;
+            
+            // ジェスチャー判定ロジック
+            if (indexOpen && !thumbOpen && !middleOpen && !ringOpen && !pinkyOpen) {
+                return "人差し指";
+            } else if (indexOpen && middleOpen && !thumbOpen && !ringOpen && !pinkyOpen) {
+                return "ピース";
+            } else if (indexOpen && middleOpen && ringOpen && !thumbOpen && !pinkyOpen) {
+                return "スリー";
+            } else if (indexOpen && middleOpen && ringOpen && pinkyOpen && !thumbOpen) {
+                return "フォー";
+            } else if (indexOpen && middleOpen && ringOpen && pinkyOpen && thumbOpen) {
+                return "ファイブ";
+            } else if (!indexOpen && !middleOpen && !ringOpen && !pinkyOpen && thumbOpen) {
+                return "グッド";
+            } else if (!indexOpen && !middleOpen && !ringOpen && !pinkyOpen && !thumbOpen) {
+                return "グー";
+            } else if (!indexOpen && !middleOpen && !ringOpen && pinkyOpen && thumbOpen) {
+                return "サーフィン";
+            } else if (!thumbOpen && indexOpen && middleOpen && ringOpen && pinkyOpen) {
+                return "バー";
+            } else {
+                return "不明";
+            }
+        }
+
+        // ランドマークテーブル更新関数
+        function updateLandmarkTable(tableId, landmarks) {
+            const tbody = document.getElementById(tableId);
+            tbody.innerHTML = '';
+            
+            for (let i = 0; i < landmarks.length; i++) {
+                const point = landmarks[i];
+                const row = document.createElement('tr');
+                
+                const idCell = document.createElement('td');
+                idCell.textContent = `${i}: ${landmarkNames[i] || '不明'}`;
+                
+                const xCell = document.createElement('td');
+                xCell.textContent = point.x.toFixed(4);
+                
+                const yCell = document.createElement('td');
+                yCell.textContent = point.y.toFixed(4);
+                
+                const zCell = document.createElement('td');
+                zCell.textContent = point.z.toFixed(4);
+                
+                row.appendChild(idCell);
+                row.appendChild(xCell);
+                row.appendChild(yCell);
+                row.appendChild(zCell);
+                tbody.appendChild(row);
+            }
+        }
+
+        // テーブルクリア関数
+        function clearLandmarkTable(tableId) {
+            document.getElementById(tableId).innerHTML = '';
+        }
+
+        // ランドマーク記録関数
+        function recordLandmarks(leftHand, rightHand) {
+            const timestamp = new Date().toISOString();
+            const record = {
+                timestamp,
+                leftHand: leftHand ? [...leftHand.landmarks] : null,
+                rightHand: rightHand ? [...rightHand.landmarks] : null
+            };
+            recordedData.push(record);
+            recordingCount++;
+        }
+
+        // CSV変換＆ダウンロード関数
+        function downloadCSV() {
+            if (recordedData.length === 0) {
+                alert('ダウンロードするデータがありません。');
+                return;
+            }
+            
+            // CSVヘッダー
+            let csvContent = "timestamp,hand,landmark_id,landmark_name,x,y,z\n";
+            
+            // データ行の追加
+            recordedData.forEach(record => {
+                if (record.leftHand) {
+                    record.leftHand.forEach((point, index) => {
+                        csvContent += `${record.timestamp},left,${index},${landmarkNames[index] || '不明'},${point.x},${point.y},${point.z}\n`;
+                    });
+                }
+                if (record.rightHand) {
+                    record.rightHand.forEach((point, index) => {
+                        csvContent += `${record.timestamp},right,${index},${landmarkNames[index] || '不明'},${point.x},${point.y},${point.z}\n`;
+                    });
+                }
+            });
+            
+            // BlobとURLの作成
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            
+            // ダウンロードリンクの作成と自動クリック
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', `hand_gestures_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`);
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        // イベントリスナー設定
+        document.getElementById('start_button').addEventListener('click', () => {
+            initCamera();
+            camera.start();
+            isRecording = true;
+            recordedData = [];
+            recordingCount = 0;
+            document.getElementById('start_button').disabled = true;
+            document.getElementById('stop_button').disabled = false;
+            document.getElementById('download_button').disabled = true;
+            document.getElementById('status').textContent = 'ステータス: データ記録中... (0件)';
+        });
+
+        document.getElementById('stop_button').addEventListener('click', () => {
+            if (camera) {
+                camera.stop();
+            }
+            isRecording = false;
+            document.getElementById('start_button').disabled = false;
+            document.getElementById('stop_button').disabled = true;
+            document.getElementById('download_button').disabled = false;
+            document.getElementById('status').textContent = `ステータス: 停止中 (${recordingCount}件記録済み)`;
+        });
+
+        document.getElementById('download_button').addEventListener('click', downloadCSV);
+
+        // ページロード時の初期化
+        window.onload = () => {
+            document.getElementById('status').textContent = 'ステータス: 準備完了';
+        };
+    </script>
+</body>
+</html>
