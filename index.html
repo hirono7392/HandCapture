@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ハンドジェスチャー認識システム</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mediapipe/0.6.1/mediapipe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <!-- MediaPipe依存ライブラリ -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <style>
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
@@ -32,6 +32,7 @@
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             border-radius: 8px;
             overflow: hidden;
+            min-height: 300px;
         }
         #output_canvas {
             width: 100%;
@@ -53,14 +54,16 @@
             justify-content: center;
             gap: 10px;
             margin-bottom: 20px;
+            flex-wrap: wrap;
         }
         button {
-            padding: 10px 20px;
+            padding: 15px 25px;
             border: none;
-            border-radius: 4px;
+            border-radius: 8px;
             font-size: 16px;
             cursor: pointer;
             transition: background-color 0.3s;
+            margin: 5px;
         }
         .start-btn {
             background-color: #4caf50;
@@ -72,6 +75,10 @@
         }
         .download-btn {
             background-color: #2196f3;
+            color: white;
+        }
+        .setup-btn {
+            background-color: #ff9800;
             color: white;
         }
         button:hover {
@@ -86,14 +93,20 @@
             margin-bottom: 20px;
             font-style: italic;
             color: #666;
+            padding: 10px;
+            background-color: #eee;
+            border-radius: 8px;
         }
         .landmarks-container {
             display: flex;
             justify-content: space-between;
             margin-bottom: 20px;
+            flex-wrap: wrap;
         }
         .landmarks-table {
-            width: 48%;
+            width: 100%;
+            max-width: 480px;
+            margin: 10px auto;
             border-collapse: collapse;
             background-color: #fff;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
@@ -115,14 +128,116 @@
             font-weight: bold;
             background-color: #eee;
         }
+        .error-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(255, 0, 0, 0.7);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            max-width: 80%;
+            text-align: center;
+            z-index: 100;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            z-index: 50;
+        }
+        .camera-guide {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #e1f5fe;
+            border-left: 5px solid #03a9f4;
+            border-radius: 8px;
+        }
+        .camera-guide h3 {
+            margin-top: 0;
+            color: #0277bd;
+        }
+        .camera-guide li {
+            margin-bottom: 8px;
+        }
+        /* モバイル向け調整 */
+        @media (max-width: 768px) {
+            button {
+                padding: 12px 20px;
+                width: 100%;
+                margin: 5px 0;
+            }
+            .controls {
+                flex-direction: column;
+            }
+        }
+        /* ローディングアニメーション */
+        .dot-flashing {
+            display: inline-block;
+            position: relative;
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background-color: #fff;
+            animation: dot-flashing 1s infinite linear alternate;
+            animation-delay: 0.5s;
+            margin-left: 5px;
+        }
+        .dot-flashing::before, .dot-flashing::after {
+            content: '';
+            display: inline-block;
+            position: absolute;
+            top: 0;
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background-color: #fff;
+            animation: dot-flashing 1s infinite alternate;
+        }
+        .dot-flashing::before {
+            left: -15px;
+            animation-delay: 0s;
+        }
+        .dot-flashing::after {
+            left: 15px;
+            animation-delay: 1s;
+        }
+        @keyframes dot-flashing {
+            0% { background-color: #fff; }
+            50%, 100% { background-color: rgba(255, 255, 255, 0.2); }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>ハンドジェスチャー認識システム</h1>
         
+        <div class="camera-guide" id="camera-guide">
+            <h3>カメラアクセスについて</h3>
+            <p>このアプリはカメラを使用してハンドジェスチャーを検出します。以下を確認してください：</p>
+            <ul>
+                <li>ブラウザがカメラへのアクセスを求めたら「許可」をクリックしてください</li>
+                <li>Androidの場合：設定 → アプリ → ブラウザ → 権限 → カメラを許可</li>
+                <li>iOSの場合：設定 → ブラウザ → カメラへのアクセスを有効化</li>
+                <li><strong>注意</strong>：プライベートブラウジングモードではカメラが機能しない場合があります</li>
+            </ul>
+            <button id="camera_check_button" class="setup-btn">カメラ設定を確認</button>
+        </div>
+        
         <div class="video-container">
             <canvas id="output_canvas"></canvas>
+            <div id="camera-error" class="error-message" style="display: none;">
+                カメラへのアクセスに失敗しました。ブラウザ設定でカメラを許可してください。
+            </div>
+            <div id="loading-indicator" class="loading" style="display: none;">
+                カメラ接続中<span class="dot-flashing"></span>
+            </div>
         </div>
         
         <div class="gesture-result">
@@ -136,7 +251,7 @@
             <button id="download_button" class="download-btn" disabled>CSVダウンロード</button>
         </div>
         
-        <div class="status" id="status">ステータス: 準備完了</div>
+        <div class="status" id="status">ステータス: 準備中...</div>
         
         <h2>手のランドマーク座標:</h2>
         <div class="landmarks-container">
@@ -174,10 +289,15 @@
 
     <script>
         // グローバル変数
-        let camera;
+        let camera = null;
         let recordedData = [];
         let isRecording = false;
         let recordingCount = 0;
+        let hands = null;
+        let canvasElement = null;
+        let canvasCtx = null;
+        
+        // ランドマーク名の定義
         const landmarkNames = [
             "手首", "親指の付け根", "親指第1関節", "親指第2関節", "親指の先",
             "人差指の付け根", "人差指第1関節", "人差指第2関節", "人差指の先",
@@ -186,42 +306,129 @@
             "小指の付け根", "小指第1関節", "小指第2関節", "小指の先"
         ];
 
-        // メインのキャンバス要素とコンテキストを取得
-        const canvasElement = document.getElementById('output_canvas');
-        const canvasCtx = canvasElement.getContext('2d');
-        canvasElement.width = 640;
-        canvasElement.height = 480;
-
-        // ハンドトラッキングの設定
-        const hands = new Hands({
-            locateFile: (file) => {
-                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        // 初期化関数
+        async function initializeApp() {
+            // UI要素の取得
+            canvasElement = document.getElementById('output_canvas');
+            canvasCtx = canvasElement.getContext('2d');
+            canvasElement.width = 640;
+            canvasElement.height = 480;
+            
+            document.getElementById('status').textContent = 'ステータス: MediaPipe初期化中...';
+            
+            try {
+                // MediaPipe Handsの初期化
+                hands = new Hands({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                    }
+                });
+                
+                hands.setOptions({
+                    maxNumHands: 2,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                
+                // 結果処理コールバックの設定
+                hands.onResults(processResults);
+                
+                // MediaPipeの読み込み完了を待機
+                await hands.initialize();
+                
+                document.getElementById('status').textContent = 'ステータス: 準備完了 - 開始ボタンをクリックしてください';
+                return true;
+            } catch (error) {
+                console.error('MediaPipe初期化エラー:', error);
+                document.getElementById('status').textContent = `ステータス: 初期化エラー - ${error.message}`;
+                return false;
             }
-        });
-
-        hands.setOptions({
-            maxNumHands: 2,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-
-        // 結果処理関数
-        hands.onResults(processResults);
-
-        // カメラ初期化
-        function initCamera() {
+        }
+        
+        // カメラへのアクセスチェック
+        async function checkCameraAccess() {
+            document.getElementById('loading-indicator').style.display = 'block';
+            document.getElementById('camera-error').style.display = 'none';
+            
+            try {
+                // カメラの存在確認
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                
+                if (videoDevices.length === 0) {
+                    throw new Error('カメラデバイスが見つかりません');
+                }
+                
+                // カメラへのアクセスをテスト
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: false
+                });
+                
+                // テスト成功したらストリームを停止
+                stream.getTracks().forEach(track => track.stop());
+                
+                document.getElementById('status').textContent = 'ステータス: カメラアクセス成功 - 開始ボタンをクリックしてください';
+                document.getElementById('camera-guide').style.display = 'none';
+                document.getElementById('loading-indicator').style.display = 'none';
+                
+                return true;
+            } catch (error) {
+                console.error('カメラアクセステストエラー:', error);
+                document.getElementById('loading-indicator').style.display = 'none';
+                document.getElementById('camera-error').style.display = 'block';
+                document.getElementById('status').textContent = `ステータス: カメラエラー - ${error.message}`;
+                
+                return false;
+            }
+        }
+        
+        // カメラ初期化関数
+        async function initCamera() {
             if (camera) {
                 camera.stop();
             }
             
-            camera = new Camera(canvasElement, {
-                onFrame: async () => {
-                    await hands.send({image: canvasElement});
-                },
-                width: 640,
-                height: 480
-            });
+            document.getElementById('loading-indicator').style.display = 'block';
+            
+            try {
+                // 直接カメラにアクセス
+                const constraints = {
+                    video: {
+                        width: { ideal: 1280, max: 1920 },
+                        height: { ideal: 720, max: 1080 },
+                        facingMode: "user"
+                    }
+                };
+                
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                // カスタムのCamera作成
+                camera = new Camera(canvasElement, {
+                    onFrame: async () => {
+                        try {
+                            await hands.send({image: canvasElement});
+                        } catch (error) {
+                            console.error('MediaPipe処理エラー:', error);
+                        }
+                    },
+                    width: 640,
+                    height: 480
+                });
+                
+                // ローディング表示を消す
+                document.getElementById('loading-indicator').style.display = 'none';
+                
+                return true;
+            } catch (error) {
+                console.error('カメラ初期化エラー:', error);
+                document.getElementById('status').textContent = `ステータス: カメラエラー - ${error.message}`;
+                document.getElementById('camera-error').style.display = 'block';
+                document.getElementById('loading-indicator').style.display = 'none';
+                
+                return false;
+            }
         }
 
         // 結果処理関数
@@ -230,6 +437,7 @@
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             
             // カメラ映像を描画
+            canvasCtx.save();
             canvasCtx.drawImage(
                 results.image, 0, 0, canvasElement.width, canvasElement.height);
             
@@ -290,6 +498,8 @@
                 clearLandmarkTable('left_landmarks');
                 clearLandmarkTable('right_landmarks');
             }
+            
+            canvasCtx.restore();
         }
 
         // ジェスチャー認識関数
@@ -409,35 +619,76 @@
         }
 
         // イベントリスナー設定
-        document.getElementById('start_button').addEventListener('click', () => {
-            initCamera();
-            camera.start();
-            isRecording = true;
-            recordedData = [];
-            recordingCount = 0;
-            document.getElementById('start_button').disabled = true;
-            document.getElementById('stop_button').disabled = false;
-            document.getElementById('download_button').disabled = true;
-            document.getElementById('status').textContent = 'ステータス: データ記録中... (0件)';
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 初期化
+            await initializeApp();
+            
+            // カメラチェックボタン
+            document.getElementById('camera_check_button').addEventListener('click', async () => {
+                const success = await checkCameraAccess();
+                if (success) {
+                    document.getElementById('camera_check_button').textContent = 'カメラ設定確認済み';
+                    document.getElementById('camera_check_button').disabled = true;
+                }
+            });
+            
+            // 開始ボタン
+            document.getElementById('start_button').addEventListener('click', async () => {
+                document.getElementById('status').textContent = 'ステータス: カメラ接続中...';
+                const success = await initCamera();
+                
+                if (success) {
+                    try {
+                        await camera.start();
+                        
+                        isRecording = true;
+                        recordedData = [];
+                        recordingCount = 0;
+                        
+                        document.getElementById('start_button').disabled = true;
+                        document.getElementById('stop_button').disabled = false;
+                        document.getElementById('download_button').disabled = true;
+                        document.getElementById('status').textContent = 'ステータス: データ記録中... (0件)';
+                    } catch (error) {
+                        console.error('カメラ起動エラー:', error);
+                        document.getElementById('status').textContent = `ステータス: カメラ起動エラー - ${error.message}`;
+                        document.getElementById('camera-error').style.display = 'block';
+                    }
+                }
+            });
+            
+            // 停止ボタン
+            document.getElementById('stop_button').addEventListener('click', () => {
+                if (camera) {
+                    try {
+                        camera.stop();
+                    } catch (error) {
+                        console.error('カメラ停止エラー:', error);
+                    }
+                }
+                
+                isRecording = false;
+                document.getElementById('start_button').disabled = false;
+                document.getElementById('stop_button').disabled = true;
+                document.getElementById('download_button').disabled = false;
+                document.getElementById('status').textContent = `ステータス: 停止中 (${recordingCount}件記録済み)`;
+            });
+            
+            // ダウンロードボタン
+            document.getElementById('download_button').addEventListener('click', downloadCSV);
         });
-
-        document.getElementById('stop_button').addEventListener('click', () => {
-            if (camera) {
-                camera.stop();
-            }
-            isRecording = false;
-            document.getElementById('start_button').disabled = false;
-            document.getElementById('stop_button').disabled = true;
-            document.getElementById('download_button').disabled = false;
-            document.getElementById('status').textContent = `ステータス: 停止中 (${recordingCount}件記録済み)`;
-        });
-
-        document.getElementById('download_button').addEventListener('click', downloadCSV);
-
-        // ページロード時の初期化
-        window.onload = () => {
-            document.getElementById('status').textContent = 'ステータス: 準備完了';
-        };
+        
+        // モバイルデバイス検出
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+        
+        // ページ読み込み時にモバイルデバイスかどうかを確認し、ガイドを表示
+        if (isMobileDevice()) {
+            document.getElementById('camera-guide').style.display = 'block';
+        } else {
+            document.getElementById('camera-guide').style.display = 'none';
+        }
     </script>
 </body>
 </html>
